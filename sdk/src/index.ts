@@ -1,6 +1,8 @@
 export { QuorumClient, TESTNET, MAINNET, ProposalStatusTimeoutError } from './client.js';
 export { GovernanceError, TokenError, RpcTimeoutError, TransactionFailedError, contractErrorCode, parseGovernanceError, parseTokenError } from './errors.js';
 export { EVENT_TOPICS, EventDecodeError, decodeEvent, decodeEvents } from './events.js';
+export { useProposal, useProposals, useVote } from './react.js';
+export type { UseQueryResult } from './react.js';
 export type {
   AdminTransferredEvent,
   ApproveEvent,
