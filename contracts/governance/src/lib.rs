@@ -62,6 +62,8 @@ pub enum GovernanceError {
     VotingNotStarted        = 34,
     TooManyActions          = 35,
     ActionFailed            = 36,
+    InvalidMaxActiveProposals = 37,
+    TooManyActiveProposals  = 38,
 }
 
 /// Basis-point denominator: `quorum_bps` of 500 means 5% of total supply.
@@ -105,6 +107,10 @@ const MAX_VETO_REASON_LENGTH: u32 = 1_000;
 /// Maximum number of actions one proposal may carry. Bounds the work and
 /// resources `execute()` spends dispatching them.
 const MAX_PROPOSAL_ACTIONS: u32 = 10;
+
+/// Default bound for the active proposal index. Admins may lower or raise it
+/// while keeping the current active set within the configured limit.
+pub const DEFAULT_MAX_ACTIVE_PROPOSALS: u32 = 25;
 
 /// Ledgers in roughly one day, at Stellar's ~5 second close time.
 const LEDGERS_PER_DAY: u32 = 17_280;
@@ -401,6 +407,7 @@ pub struct Config {
     pub paused: bool,
     pub proposal_deposit: i128,
     pub proposer_cooldown: u32,
+    pub max_active_proposals: u32,
 }
 
 #[contracttype]
@@ -451,7 +458,7 @@ impl GovernanceContract {
             return Err(GovernanceError::MinimumTimelockRequired);
         }
         admin.require_auth();
-        let config = Config { token: token.clone(), quorum_bps, voting_period, timelock_period, proposal_threshold, admin: admin.clone(), guardian: guardian.clone(), execution_grace_period, paused: false, proposal_deposit: 0, proposer_cooldown: 0 };
+        let config = Config { token: token.clone(), quorum_bps, voting_period, timelock_period, proposal_threshold, admin: admin.clone(), guardian: guardian.clone(), execution_grace_period, paused: false, proposal_deposit: 0, proposer_cooldown: 0, max_active_proposals: DEFAULT_MAX_ACTIVE_PROPOSALS };
         env.storage().instance().set(&DataKey::Config, &config);
         env.storage().instance().set(&DataKey::ProposalCount, &0u64);
 
@@ -695,6 +702,11 @@ impl GovernanceContract {
         // Check if contract is paused
         if config.paused {
             return Err(GovernanceError::ContractPaused);
+        }
+
+        let active = env.storage().persistent().get::<DataKey, soroban_sdk::Vec<u64>>(&DataKey::ActiveProposals).unwrap_or_else(|| soroban_sdk::Vec::new(env));
+        if active.len() >= config.max_active_proposals {
+            return Err(GovernanceError::TooManyActiveProposals);
         }
 
         let mut proposal: Proposal = env.storage().persistent()
@@ -946,6 +958,21 @@ impl GovernanceContract {
             (Symbol::new(&env, "proposer_cooldown_updated"),),
             ProposerCooldownUpdated { ledgers },
         );
+        Ok(())
+    }
+
+    /// Sets the maximum number of concurrently Active proposals. Admin only;
+    /// the limit cannot be lowered below the current active set.
+    pub fn set_max_active_proposals(env: Env, max: u32) -> Result<(), GovernanceError> {
+        let mut config: Config = Self::require_config(&env)?;
+        config.admin.require_auth();
+        let active = env.storage().persistent().get::<DataKey, soroban_sdk::Vec<u64>>(&DataKey::ActiveProposals).unwrap_or_else(|| soroban_sdk::Vec::new(&env));
+        if max == 0 || max < active.len() {
+            return Err(GovernanceError::InvalidMaxActiveProposals);
+        }
+        config.max_active_proposals = max;
+        env.storage().instance().set(&DataKey::Config, &config);
+        Self::touch_instance(&env);
         Ok(())
     }
 
