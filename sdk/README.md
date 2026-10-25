@@ -204,6 +204,10 @@ cache when immediate freshness matters; no write automatically clears it.
 
 ## Contributor notes
 
+See the generated [API reference](docs/api-reference.md) for the public SDK
+exports. Regenerate it with `npm run docs` and verify it with
+`npm run docs:check`.
+
 Run `npm ci`, `npm run build`, and `npm run test:browser` in `sdk/` to
 check browser compatibility. CI bundles the emitted ESM entry with esbuild's
 browser target, rejects Node built-in imports (including `node:` imports),

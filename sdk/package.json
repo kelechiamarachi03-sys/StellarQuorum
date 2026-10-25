@@ -69,6 +69,8 @@
     "lint": "eslint src test",
     "spec": "node scripts/generate-client-spec.mjs",
     "spec:check": "node scripts/generate-client-spec.mjs --check",
+    "docs": "node scripts/generate-api-docs.mjs",
+    "docs:check": "node scripts/generate-api-docs.mjs --check",
     "bench": "node bench/proposal-list.bench.mjs"
   },
   "dependencies": {
