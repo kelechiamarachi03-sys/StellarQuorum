@@ -429,6 +429,30 @@ fn proposal_ids_increment_from_one() {
 }
 
 #[test]
+fn active_proposal_index_tracks_creation_and_finalization() {
+    let env = Env::default();
+    let (admin, governance_id, first) = open_with_holders(&env, 1_000_000, QUORUM_BPS, &[]);
+    let governance = GovernanceContractClient::new(&env, &governance_id);
+    let second = propose(&env, &governance_id, &admin).id;
+    assert_eq!(governance.get_active_proposals(), soroban_sdk::vec![&env, first, second]);
+
+    close_voting(&env, &governance, first);
+    governance.finalize(&first);
+    assert_eq!(governance.get_active_proposals(), soroban_sdk::vec![&env, second]);
+}
+
+#[test]
+fn active_proposal_index_removes_cancelled_proposals() {
+    let env = Env::default();
+    let (admin, governance_id, first) = open_with_holders(&env, 1_000_000, QUORUM_BPS, &[]);
+    let governance = GovernanceContractClient::new(&env, &governance_id);
+    let second = propose(&env, &governance_id, &admin).id;
+
+    governance.cancel(&admin, &first);
+    assert_eq!(governance.get_active_proposals(), soroban_sdk::vec![&env, second]);
+}
+
+#[test]
 fn get_proposal_rejects_an_unknown_id() {
     let env = Env::default();
     let (_, _, governance_id) = deploy(&env, 1_000_000, QUORUM_BPS);

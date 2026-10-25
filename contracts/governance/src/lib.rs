@@ -407,6 +407,7 @@ pub struct Config {
 pub enum DataKey {
     Config,
     ProposalCount,
+    ActiveProposals,
     Proposal(u64),
     HasVoted(u64, Address),
     Delegate(Address),
@@ -655,6 +656,7 @@ impl GovernanceContract {
         } else { ProposalStatus::Failed };
         let status = proposal.status.clone();
         env.storage().persistent().set(&DataKey::Proposal(proposal_id), &proposal);
+        Self::remove_active_proposal(&env, proposal_id);
         Self::touch_proposal(&env, proposal_id);
         Self::record_status_change(&env, &previous, &status);
 
@@ -779,6 +781,18 @@ impl GovernanceContract {
 
     pub fn get_proposal_count(env: Env) -> u64 {
         env.storage().instance().get(&DataKey::ProposalCount).unwrap_or(0)
+    }
+
+    /// Returns the IDs of proposals currently in the Active voting state.
+    /// The list is maintained on create, finalize, and cancel, so callers do
+    /// not need to fetch and filter the full proposal history.
+    pub fn get_active_proposals(env: Env) -> soroban_sdk::Vec<u64> {
+        let key = DataKey::ActiveProposals;
+        let active = env.storage().persistent().get(&key).unwrap_or_else(|| soroban_sdk::Vec::new(&env));
+        if env.storage().persistent().has(&key) {
+            Self::touch_persistent(&env, &key);
+        }
+        active
     }
 
     /// Returns a paginated list of proposals.
@@ -1045,6 +1059,7 @@ impl GovernanceContract {
         }
         proposal.status = ProposalStatus::Cancelled;
         env.storage().persistent().set(&DataKey::Proposal(proposal_id), &proposal);
+        Self::remove_active_proposal(&env, proposal_id);
         Self::touch_proposal(&env, proposal_id);
         // A cancelled proposal forfeits any deposit it still holds. One that
         // already passed had its deposit refunded at queueing, so nothing is left.
@@ -1302,6 +1317,7 @@ impl GovernanceContract {
         };
         env.storage().persistent().set(&DataKey::Proposal(id), &proposal);
         env.storage().instance().set(&DataKey::ProposalCount, &id);
+        Self::add_active_proposal(env, id);
 
         if config.proposal_deposit > 0 {
             token.transfer(&proposer, &env.current_contract_address(), &config.proposal_deposit);
@@ -1470,6 +1486,24 @@ impl GovernanceContract {
     /// Extends the TTL of a persistent entry that the helpers above do not cover.
     fn touch_persistent(env: &Env, key: &DataKey) {
         env.storage().persistent().extend_ttl(key, TTL_THRESHOLD, TTL_EXTEND_TO);
+    }
+
+    fn add_active_proposal(env: &Env, id: u64) {
+        let key = DataKey::ActiveProposals;
+        let mut active = env.storage().persistent().get(&key).unwrap_or_else(|| soroban_sdk::Vec::new(env));
+        active.push_back(id);
+        env.storage().persistent().set(&key, &active);
+        Self::touch_persistent(env, &key);
+    }
+
+    fn remove_active_proposal(env: &Env, id: u64) {
+        let key = DataKey::ActiveProposals;
+        let Some(mut active) = env.storage().persistent().get::<DataKey, soroban_sdk::Vec<u64>>(&key) else { return; };
+        if let Some(index) = active.first_index_of(id) {
+            active.remove(index);
+            env.storage().persistent().set(&key, &active);
+            Self::touch_persistent(env, &key);
+        }
     }
 
     /// Extends the TTL of instance storage, which holds Config and the proposal
